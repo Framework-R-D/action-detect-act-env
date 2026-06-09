@@ -5,9 +5,7 @@
 ## Usage
 
 ```yaml
-- uses: Framework-R-D/action-detect-act-env@v1  # pin to commit SHA in production
-  with:
-    input-name: value
+- uses: Framework-R-D/action-detect-act-env@ddb96e6d16df2dab61947c45270b65ba1cadc863 # v1
 ```
 
 ## Inputs
