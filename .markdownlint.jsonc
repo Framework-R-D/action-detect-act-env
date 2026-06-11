@@ -10,7 +10,7 @@
   "MD032": true,
   "MD034": true,
   "MD036": {
-    "punctuation": ",;:!?"
+    "punctuation": ".,;:!?"
   },
   "MD040": true
 }
