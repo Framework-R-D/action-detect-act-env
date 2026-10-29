@@ -47,3 +47,9 @@ repos:
     hooks:
       - id: markdownlint-cli2
         args: [--fix]
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        entry: bash scripts/pre-commit/actionlint.sh
+        verbose: true
