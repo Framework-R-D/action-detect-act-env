@@ -18,19 +18,30 @@ jobs:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
           PUSH_SHA: ${{ github.event.after }}
           FORCED_PUSH: ${{ github.event.forced }}
+          RUN_STARTED_AT: ${{ github.run_started_at }}
           REPO_NAME: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
         run: |
           set -euo pipefail
 
           # Rebase merges can name the merging user as committer. Check the PR record instead.
-          # A force push restoring an old PR merge is still a direct branch update.
+          # Only suppress alerts for PR merges associated with this branch update.
           if [ "$FORCED_PUSH" != "true" ]; then
             PR_PAGES=$(gh api --paginate --slurp "repos/${REPO_NAME}/commits/${PUSH_SHA}/pulls")
-            IS_PR_MERGE=$(jq -r --arg sha "$PUSH_SHA" --arg repo "$REPO_NAME" '
+            IS_PR_MERGE=$(jq -r \
+              --arg sha "$PUSH_SHA" \
+              --arg repo "$REPO_NAME" \
+              --arg run_started_at "$RUN_STARTED_AT" '
               any(.[][];
                 .merged_at != null and .merge_commit_sha == $sha and
-                .base.ref == "main" and .base.repo.full_name == $repo
+                .base.ref == "main" and .base.repo.full_name == $repo and
+                (
+                  (
+                    (.merged_at | fromdateiso8601) -
+                    ($run_started_at | fromdateiso8601)
+                  ) as $delta |
+                  $delta >= -900 and $delta <= 900
+                )
               )
             ' <<< "$PR_PAGES")
 

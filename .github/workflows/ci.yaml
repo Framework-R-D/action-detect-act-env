@@ -89,6 +89,9 @@ jobs:
       - name: Run yamllint
         working-directory: ${{ needs.setup.outputs.checkout_path }}
         run: yamllint .
+      - name: Test guardrail alert logic
+        working-directory: ${{ needs.setup.outputs.checkout_path }}
+        run: python3 -m unittest discover -s tests -v
 
   markdown-check:
     needs: setup
