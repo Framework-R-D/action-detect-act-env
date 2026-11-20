@@ -7,12 +7,14 @@ name = "action-detect-act-env-format-tools"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "pyyaml" },
     { name = "uv" },
     { name = "yamllint" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pyyaml", specifier = "==6.0.3" },
     { name = "uv", specifier = "==0.12.1" },
     { name = "yamllint", specifier = "==1.38.0" },
 ]

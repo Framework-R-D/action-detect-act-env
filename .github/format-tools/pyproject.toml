@@ -2,7 +2,7 @@
 name = "action-detect-act-env-format-tools"
 version = "0.0.0"
 requires-python = "==3.12.*"
-dependencies = ["uv==0.12.1", "yamllint==1.38.0"]
+dependencies = ["uv==0.12.1", "pyyaml==6.0.3", "yamllint==1.38.0"]
 
 [tool.uv]
 package = false
