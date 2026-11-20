@@ -10,7 +10,6 @@ on:
 permissions:
   contents: read
   pull-requests: read
-  security-events: write
 
 jobs:
   setup:
@@ -61,6 +60,7 @@ jobs:
           persist-credentials: false
       - uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2
         with:
+          version: "1.7.12"
           # Pass explicit file globs so actionlint does not need to discover
           # the project root from GITHUB_WORKSPACE (which doesn't contain
           # .github/workflows/ when checkout used a path: subdirectory).
@@ -82,13 +82,24 @@ jobs:
           path: ${{ needs.setup.outputs.checkout_path }}
           repository: ${{ needs.setup.outputs.repo }}
           persist-credentials: false
+      - name: Checkout trusted format tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}
+          ref: ${{ github.workflow_sha }}
+          path: workflow-tools
+          sparse-checkout: .github/format-tools
+          persist-credentials: false
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      - name: Install yamllint
-        run: uv tool install yamllint
+        with:
+          python-version: "3.12"
+          version-file: workflow-tools/.github/format-tools/pyproject.toml
       - name: Run yamllint
         working-directory: ${{ needs.setup.outputs.checkout_path }}
-        run: yamllint .
+        run: >-
+          uv run --project "$GITHUB_WORKSPACE/workflow-tools/.github/format-tools"
+          --locked --no-build yamllint .
 
   guardrail-test:
     needs: setup
@@ -101,9 +112,13 @@ jobs:
           path: ${{ needs.setup.outputs.checkout_path }}
           repository: ${{ needs.setup.outputs.repo }}
           persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          version-file: ${{ needs.setup.outputs.checkout_path }}/.github/format-tools/pyproject.toml
       - name: Test guardrail alert logic
         working-directory: ${{ needs.setup.outputs.checkout_path }}
-        run: python3 -m unittest discover -s tests -p 'test_guardrail_audit_alert.py' -v
+        run: uv run --project .github/format-tools --locked --no-build python -m unittest discover -s tests -v
 
   markdown-check:
     needs: setup
@@ -128,6 +143,11 @@ jobs:
 
   codeql:
     needs: setup
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+      security-events: write
     if: >
       always() && needs.setup.result == 'success' && (
         github.event_name != 'pull_request' ||
