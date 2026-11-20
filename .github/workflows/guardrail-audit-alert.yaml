@@ -6,27 +6,67 @@ on:
 jobs:
   slack-alert:
     runs-on: ubuntu-latest
-    permissions: {} # Explicitly drops all token permissions
-    if: github.actor != 'dependabot[bot]'
+    permissions:
+      pull-requests: read
     steps:
       - name: Process and Format Slack Alert
+        shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SLACK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           # Safely map variables as structured environment inputs
           COMMIT_MSG: ${{ github.event.head_commit.message }}
-          COMMITTER: ${{ github.event.head_commit.committer.name }}
+          PUSH_SHA: ${{ github.event.after }}
+          FORCED_PUSH: ${{ github.event.forced }}
+          PUSHED_AT: ${{ github.event.repository.pushed_at }}
           REPO_NAME: ${{ github.repository }}
           ACTOR: ${{ github.actor }}
         run: |
-          # If the committer isn't 'GitHub', an admin pushed directly via local CLI.
-          if [ "$COMMITTER" != "GitHub" ]; then
+          set -euo pipefail
+          : "${SLACK_URL:?SLACK_WEBHOOK_URL is not configured}"
 
-            # Use jq to format a completely safe, escaped JSON object for Slack
-            PAYLOAD=$(jq -n \
-              --arg msg "$COMMIT_MSG" \
-              --arg repo "$REPO_NAME" \
-              --arg actor "$ACTOR" \
-              '{"text": "⚠️ *Direct Push to Main Detected!*\n*Repo:* `\($repo)`\n*Actor:* `@\($actor)`\n*Commit:* `\($msg)`"}')
+          # Rebase merges can name the merging user as committer. Check the PR record instead.
+          # Event time is stable across runner delays and reruns. The 60-second tolerance
+          # is best-effort correlation; an immediate rewind and restore can still match.
+          if [ "$FORCED_PUSH" != "true" ]; then
+            if PUSH_TIME=$(jq -nr --arg time "$PUSHED_AT" '
+              $time | if test("^[0-9]+$") then tonumber else fromdateiso8601 end
+            '); then
+              PR_PAGES=$(gh api --paginate --slurp "repos/${REPO_NAME}/commits/${PUSH_SHA}/pulls")
+              IS_PR_MERGE=$(jq -r \
+                --arg sha "$PUSH_SHA" \
+                --arg repo "$REPO_NAME" \
+                --argjson push_time "$PUSH_TIME" '
+                any(.[][];
+                  .merged_at != null and .merge_commit_sha == $sha and
+                  .base.ref == "main" and .base.repo.full_name == $repo and
+                  (
+                    ($push_time - (.merged_at | fromdateiso8601)) as $delta |
+                    $delta >= -60 and $delta <= 60
+                  )
+                )
+              ' <<< "$PR_PAGES")
 
-            curl -X POST -H 'Content-type: application/json' --data "$PAYLOAD" "$SLACK_URL"
+              if [ "$IS_PR_MERGE" = "true" ]; then
+                echo "Push matches a recent merged PR into main; no alert needed."
+                exit 0
+              fi
+            else
+              echo "::warning::Push timestamp is missing or invalid; sending an alert instead of suppressing it."
+            fi
+          fi
+
+          PAYLOAD=$(jq -n \
+            --arg msg "$COMMIT_MSG" \
+            --arg repo "$REPO_NAME" \
+            --arg actor "$ACTOR" \
+            '{text: "⚠️ *Direct Push to Main Detected!*\n*Repo:* `\($repo)`\n*Actor:* `@\($actor)`\n*Commit:* `\($msg)`"}')
+
+          SLACK_RESPONSE=$(curl --fail-with-body --silent --show-error -X POST \
+            -H 'Content-type: application/json' --data "$PAYLOAD" \
+            --write-out '\n%{http_code}' "$SLACK_URL")
+          SLACK_STATUS=${SLACK_RESPONSE##*$'\n'}
+          if [ "$SLACK_STATUS" != "200" ]; then
+            echo "::error::Slack webhook returned HTTP ${SLACK_STATUS}; expected HTTP 200."
+            exit 1
           fi
